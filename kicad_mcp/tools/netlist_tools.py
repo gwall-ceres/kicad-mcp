@@ -134,18 +134,51 @@ def register_netlist_tools(mcp: FastMCP) -> None:
             print(f"Found schematic file: {schematic_path}")
             if ctx:
                 ctx.info(f"Found schematic file: {os.path.basename(schematic_path)}")
-            
-            # Extract netlist
+
+            # Extract netlist directly using utility functions
             if ctx:
                 await ctx.report_progress(20, 100)
-            
-            # Call the schematic netlist extraction
-            result = await extract_schematic_netlist(schematic_path, ctx)
-            
-            # Add project path to result
-            if "success" in result and result["success"]:
-                result["project_path"] = project_path
-            
+                ctx.info("Parsing schematic structure...")
+
+            netlist_data = extract_netlist(schematic_path)
+
+            if "error" in netlist_data:
+                print(f"Error extracting netlist: {netlist_data['error']}")
+                if ctx:
+                    ctx.info(f"Error extracting netlist: {netlist_data['error']}")
+                return {"success": False, "error": netlist_data['error']}
+
+            if ctx:
+                await ctx.report_progress(60, 100)
+                ctx.info(f"Extracted {netlist_data['component_count']} components and {netlist_data['net_count']} nets")
+
+            # Analyze the netlist
+            if ctx:
+                await ctx.report_progress(70, 100)
+                ctx.info("Analyzing netlist data...")
+
+            analysis_results = analyze_netlist(netlist_data)
+
+            if ctx:
+                await ctx.report_progress(90, 100)
+
+            # Build result
+            result = {
+                "success": True,
+                "project_path": project_path,
+                "schematic_path": schematic_path,
+                "component_count": netlist_data["component_count"],
+                "net_count": netlist_data["net_count"],
+                "components": netlist_data["components"],
+                "nets": netlist_data["nets"],
+                "analysis": analysis_results
+            }
+
+            # Complete progress
+            if ctx:
+                await ctx.report_progress(100, 100)
+                ctx.info("Netlist extraction complete")
+
             return result
             
         except Exception as e:
