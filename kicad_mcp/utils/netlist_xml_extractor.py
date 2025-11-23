@@ -57,11 +57,16 @@ def export_and_parse_netlist_xml(schematic_path: str) -> Dict[str, Any]:
             raise RuntimeError("Netlist XML file was not created")
 
         # Parse the XML netlist using kicad_netlist_reader
+        print("Parsing XML netlist...")
         net = KicadNetlist(netlist_xml_path)
+        print(f"Loaded netlist with {len(net.components)} components")
 
         # Extract components with pin-to-net mappings
         components = {}
-        for comp in net.components:
+        print("Extracting component pin-to-net mappings...")
+        for i, comp in enumerate(net.components):
+            if i % 50 == 0:
+                print(f"  Processing component {i}/{len(net.components)}")
             ref = comp.getRef()
             value = comp.getValue()
             footprint = comp.getFootprint()
@@ -90,6 +95,8 @@ def export_and_parse_netlist_xml(schematic_path: str) -> Dict[str, Any]:
             }
 
         # Extract nets
+        print(f"Extracted {len(components)} components")
+        print("Extracting nets...")
         nets = {}
         for net_element in net.getNets():
             net_name = net_element.get("net", "name")
@@ -105,6 +112,9 @@ def export_and_parse_netlist_xml(schematic_path: str) -> Dict[str, Any]:
                             "pin": pin_num
                         })
                 nets[net_name] = pins
+
+        print(f"Extracted {len(nets)} nets")
+        print("Building result dictionary...")
 
         return {
             "success": True,
