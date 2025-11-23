@@ -20,7 +20,7 @@ def register_bom_tools(mcp: FastMCP) -> None:
     """
     
     @mcp.tool()
-    async def analyze_bom(project_path: str, ctx: Context | None) -> Dict[str, Any]:
+    async def analyze_bom(project_path: str, ctx: Context | None = None) -> Dict[str, Any]:
         """Analyze a KiCad project's Bill of Materials.
         
         This tool will look for BOM files related to a KiCad project and provide
@@ -161,7 +161,7 @@ def register_bom_tools(mcp: FastMCP) -> None:
         return results
     
     @mcp.tool()
-    async def export_bom_csv(project_path: str, ctx: Context | None) -> Dict[str, Any]:
+    async def export_bom_csv(project_path: str, ctx: Context | None = None) -> Dict[str, Any]:
         """Export a Bill of Materials for a KiCad project.
         
         This tool attempts to generate a CSV BOM file for a KiCad project.
@@ -585,7 +585,7 @@ def analyze_bom_data(components: List[Dict[str, Any]], format_info: Dict[str, An
     return results
 
 
-async def export_bom_with_python(schematic_file: str, output_dir: str, project_name: str, ctx: Context | None) -> Dict[str, Any]:
+async def export_bom_with_python(schematic_file: str, output_dir: str, project_name: str, ctx: Context | None = None) -> Dict[str, Any]:
     """Export a BOM using KiCad Python modules.
     
     Args:
@@ -628,7 +628,7 @@ async def export_bom_with_python(schematic_file: str, output_dir: str, project_n
         }
 
 
-async def export_bom_with_cli(schematic_file: str, output_dir: str, project_name: str, ctx: Context | None) -> Dict[str, Any]:
+async def export_bom_with_cli(schematic_file: str, output_dir: str, project_name: str, ctx: Context | None = None) -> Dict[str, Any]:
     """Export a BOM using KiCad command-line tools.
 
     Args:

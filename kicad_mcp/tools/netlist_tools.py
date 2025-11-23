@@ -6,7 +6,8 @@ from typing import Dict, Any
 from mcp.server.fastmcp import FastMCP, Context
 
 from kicad_mcp.utils.file_utils import get_project_files
-from kicad_mcp.utils.netlist_parser import extract_netlist, analyze_netlist
+from kicad_mcp.utils.netlist_xml_extractor import export_and_parse_netlist_xml
+from kicad_mcp.utils.netlist_parser import analyze_netlist
 
 def register_netlist_tools(mcp: FastMCP) -> None:
     """Register netlist-related tools with the MCP server.
@@ -16,7 +17,7 @@ def register_netlist_tools(mcp: FastMCP) -> None:
     """
     
     @mcp.tool()
-    async def extract_schematic_netlist(schematic_path: str, ctx: Context | None) -> Dict[str, Any]:
+    async def extract_schematic_netlist(schematic_path: str, ctx: Context | None = None) -> Dict[str, Any]:
         """Extract netlist information from a KiCad schematic.
         
         This tool parses a KiCad schematic file and extracts comprehensive
@@ -48,7 +49,7 @@ def register_netlist_tools(mcp: FastMCP) -> None:
                 await ctx.report_progress(20, 100)
                 ctx.info("Parsing schematic structure...")
             
-            netlist_data = extract_netlist(schematic_path, timeout=60.0)
+            netlist_data = export_and_parse_netlist_xml(schematic_path)
             
             if "error" in netlist_data:
                 print(f"Error extracting netlist: {netlist_data['error']}")
@@ -95,7 +96,7 @@ def register_netlist_tools(mcp: FastMCP) -> None:
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
-    async def extract_project_netlist(project_path: str, ctx: Context | None) -> Dict[str, Any]:
+    async def extract_project_netlist(project_path: str, ctx: Context | None = None) -> Dict[str, Any]:
         """Extract netlist from a KiCad project's schematic.
         
         This tool finds the schematic associated with a KiCad project
@@ -140,7 +141,7 @@ def register_netlist_tools(mcp: FastMCP) -> None:
                 await ctx.report_progress(20, 100)
                 ctx.info("Parsing schematic structure...")
 
-            netlist_data = extract_netlist(schematic_path, timeout=60.0)
+            netlist_data = export_and_parse_netlist_xml(schematic_path)
 
             if "error" in netlist_data:
                 print(f"Error extracting netlist: {netlist_data['error']}")
@@ -188,7 +189,7 @@ def register_netlist_tools(mcp: FastMCP) -> None:
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
-    async def analyze_schematic_connections(schematic_path: str, ctx: Context | None) -> Dict[str, Any]:
+    async def analyze_schematic_connections(schematic_path: str, ctx: Context | None = None) -> Dict[str, Any]:
         """Analyze connections in a KiCad schematic.
         
         This tool provides detailed analysis of component connections,
@@ -216,7 +217,7 @@ def register_netlist_tools(mcp: FastMCP) -> None:
         
         # Extract netlist information
         try:
-            netlist_data = extract_netlist(schematic_path, timeout=60.0)
+            netlist_data = export_and_parse_netlist_xml(schematic_path)
             
             if "error" in netlist_data:
                 print(f"Error extracting netlist: {netlist_data['error']}")
@@ -309,7 +310,7 @@ def register_netlist_tools(mcp: FastMCP) -> None:
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
-    async def find_component_connections(project_path: str, component_ref: str, ctx: Context | None) -> Dict[str, Any]:
+    async def find_component_connections(project_path: str, component_ref: str, ctx: Context | None = None) -> Dict[str, Any]:
         """Find all connections for a specific component in a KiCad project.
         
         This tool extracts information about how a specific component
@@ -355,7 +356,7 @@ def register_netlist_tools(mcp: FastMCP) -> None:
                 await ctx.report_progress(30, 100)
                 ctx.info(f"Extracting netlist to find connections for {component_ref}...")
             
-            netlist_data = extract_netlist(schematic_path, timeout=60.0)
+            netlist_data = export_and_parse_netlist_xml(schematic_path)
             
             if "error" in netlist_data:
                 print(f"Failed to extract netlist: {netlist_data['error']}")

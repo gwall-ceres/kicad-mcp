@@ -25,7 +25,7 @@ def register_pattern_tools(mcp: FastMCP) -> None:
     """
     
     @mcp.tool()
-    async def identify_circuit_patterns(schematic_path: str, ctx: Context | None) -> Dict[str, Any]:
+    async def identify_circuit_patterns(schematic_path: str, ctx: Context | None = None) -> Dict[str, Any]:
         """Identify common circuit patterns in a KiCad schematic.
         
         This tool analyzes a schematic to recognize common circuit blocks such as:
@@ -150,7 +150,7 @@ def register_pattern_tools(mcp: FastMCP) -> None:
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
-    async def analyze_project_circuit_patterns(project_path: str, ctx: Context | None) -> Dict[str, Any]:
+    async def analyze_project_circuit_patterns(project_path: str, ctx: Context | None = None) -> Dict[str, Any]:
         """Identify circuit patterns in a KiCad project's schematic.
         
         Args:
