@@ -9,15 +9,17 @@ from collections import defaultdict
 class SchematicParser:
     """Parser for KiCad schematic files to extract netlist information."""
 
-    def __init__(self, schematic_path: str, is_hierarchical: bool = True):
+    def __init__(self, schematic_path: str, is_hierarchical: bool = True, timeout: float = 30.0):
         """Initialize the schematic parser.
 
         Args:
             schematic_path: Path to the KiCad schematic file (.kicad_sch)
             is_hierarchical: Whether to parse hierarchical sub-sheets
+            timeout: Maximum time in seconds to parse each schematic file (default: 30.0)
         """
         self.schematic_path = schematic_path
         self.is_hierarchical = is_hierarchical
+        self.timeout = timeout
         self.content = ""
         self.components = []
         self.labels = []
@@ -510,6 +512,7 @@ class SchematicParser:
     def _parse_hierarchical_sheets(self) -> None:
         """Parse hierarchical sub-sheets and merge their data."""
         import time
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
         # Get the directory of the current schematic
         schematic_dir = os.path.dirname(self.schematic_path)
@@ -530,44 +533,60 @@ class SchematicParser:
             start_time = time.time()
 
             try:
-                # Parse the sub-schematic (non-hierarchical to avoid infinite recursion)
+                # Parse the sub-schematic with timeout enforcement
                 print(f"  [{idx}/{total_sheets}] Creating parser for {sheet_file}")
-                sub_parser = SchematicParser(sheet_path, is_hierarchical=False)
 
-                print(f"  [{idx}/{total_sheets}] Calling parse() for {sheet_file}")
-                sub_result = sub_parser.parse()
+                def parse_sheet():
+                    sub_parser = SchematicParser(sheet_path, is_hierarchical=False, timeout=self.timeout)
+                    return sub_parser.parse()
 
-                parse_time = time.time() - start_time
-                print(f"  [{idx}/{total_sheets}] Parse completed in {parse_time:.2f}s")
+                # Use ThreadPoolExecutor to enforce timeout
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(parse_sheet)
+                    try:
+                        print(f"  [{idx}/{total_sheets}] Calling parse() for {sheet_file} (timeout: {self.timeout}s)")
+                        sub_result = future.result(timeout=self.timeout)
 
-                # Merge components from sub-schematic
-                print(f"  [{idx}/{total_sheets}] Merging components from {sheet_file}")
-                merged_count = 0
-                for ref, component in sub_result.get('components', {}).items():
-                    if ref not in self.component_info:
-                        self.component_info[ref] = component
-                        # Mark which sheet this component came from
-                        component['sheet'] = sheet_file
-                        merged_count += 1
-                    else:
-                        print(f"  Warning: Duplicate component reference {ref} found in {sheet_file}")
+                        parse_time = time.time() - start_time
+                        print(f"  [{idx}/{total_sheets}] Parse completed in {parse_time:.2f}s")
 
-                print(f"  [{idx}/{total_sheets}] Merged {merged_count} components from {sheet_file}")
+                        # Merge components from sub-schematic
+                        print(f"  [{idx}/{total_sheets}] Merging components from {sheet_file}")
+                        merged_count = 0
+                        for ref, component in sub_result.get('components', {}).items():
+                            if ref not in self.component_info:
+                                self.component_info[ref] = component
+                                # Mark which sheet this component came from
+                                component['sheet'] = sheet_file
+                                merged_count += 1
+                            else:
+                                print(f"  Warning: Duplicate component reference {ref} found in {sheet_file}")
 
-                # Merge nets from sub-schematic
-                print(f"  [{idx}/{total_sheets}] Merging nets from {sheet_file}")
-                merged_nets = 0
-                for net_name, pins in sub_result.get('nets', {}).items():
-                    if net_name in self.nets:
-                        # Merge pins for existing net
-                        self.nets[net_name].extend(pins)
-                    else:
-                        self.nets[net_name] = pins
-                        merged_nets += 1
+                        print(f"  [{idx}/{total_sheets}] Merged {merged_count} components from {sheet_file}")
 
-                total_time = time.time() - start_time
-                print(f"  [{idx}/{total_sheets}] Completed {sheet_file} in {total_time:.2f}s: {merged_count} components, {merged_nets} new nets")
+                        # Merge nets from sub-schematic
+                        print(f"  [{idx}/{total_sheets}] Merging nets from {sheet_file}")
+                        merged_nets = 0
+                        for net_name, pins in sub_result.get('nets', {}).items():
+                            if net_name in self.nets:
+                                # Merge pins for existing net
+                                self.nets[net_name].extend(pins)
+                            else:
+                                self.nets[net_name] = pins
+                                merged_nets += 1
 
+                        total_time = time.time() - start_time
+                        print(f"  [{idx}/{total_sheets}] Completed {sheet_file} in {total_time:.2f}s: {merged_count} components, {merged_nets} new nets")
+
+                    except FutureTimeoutError:
+                        error_time = time.time() - start_time
+                        print(f"  [{idx}/{total_sheets}] TIMEOUT: Parsing {sheet_file} exceeded {self.timeout}s limit (stopped at {error_time:.2f}s)")
+                        raise TimeoutError(f"Schematic parsing timed out after {self.timeout}s for file: {sheet_file}")
+
+            except TimeoutError as e:
+                error_time = time.time() - start_time
+                print(f"  [{idx}/{total_sheets}] Timeout error parsing {sheet_file} after {error_time:.2f}s")
+                raise  # Re-raise to propagate timeout to caller
             except Exception as e:
                 error_time = time.time() - start_time
                 print(f"  [{idx}/{total_sheets}] Error parsing sub-schematic {sheet_file} after {error_time:.2f}s: {str(e)}")
@@ -610,22 +629,57 @@ class SchematicParser:
         print(f"Found {len(self.nets)} potential nets from labels and power symbols")
 
 
-def extract_netlist(schematic_path: str) -> Dict[str, Any]:
+def extract_netlist(schematic_path: str, timeout: float = 60.0, is_hierarchical: bool = False) -> Dict[str, Any]:
     """Extract netlist information from a KiCad schematic file.
-    
+
     Args:
         schematic_path: Path to the KiCad schematic file (.kicad_sch)
-        
+        timeout: Maximum time in seconds for parsing (default: 60.0)
+        is_hierarchical: Whether to parse hierarchical sub-sheets (default: False for speed)
+
     Returns:
         Dictionary with netlist information
     """
-    try:
-        parser = SchematicParser(schematic_path)
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+
+    def parse_with_timeout():
+        parser = SchematicParser(schematic_path, is_hierarchical=is_hierarchical, timeout=timeout)
         return parser.parse()
+
+    try:
+        # Wrap the entire parsing operation with a timeout
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(parse_with_timeout)
+            try:
+                print(f"Starting schematic parsing with {timeout}s timeout...")
+                result = future.result(timeout=timeout)
+                print(f"Schematic parsing completed successfully")
+                return result
+            except FutureTimeoutError:
+                print(f"TIMEOUT: Schematic parsing exceeded {timeout}s limit")
+                return {
+                    "error": f"Timeout: Schematic parsing exceeded {timeout}s limit",
+                    "timeout": True,
+                    "components": {},
+                    "nets": {},
+                    "component_count": 0,
+                    "net_count": 0
+                }
+    except TimeoutError as e:
+        print(f"Timeout extracting netlist: {str(e)}")
+        return {
+            "error": f"Timeout: {str(e)}",
+            "timeout": True,
+            "components": {},
+            "nets": {},
+            "component_count": 0,
+            "net_count": 0
+        }
     except Exception as e:
         print(f"Error extracting netlist: {str(e)}")
         return {
             "error": str(e),
+            "timeout": False,
             "components": {},
             "nets": {},
             "component_count": 0,

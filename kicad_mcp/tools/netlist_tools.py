@@ -48,7 +48,7 @@ def register_netlist_tools(mcp: FastMCP) -> None:
                 await ctx.report_progress(20, 100)
                 ctx.info("Parsing schematic structure...")
             
-            netlist_data = extract_netlist(schematic_path)
+            netlist_data = extract_netlist(schematic_path, timeout=60.0)
             
             if "error" in netlist_data:
                 print(f"Error extracting netlist: {netlist_data['error']}")
@@ -140,7 +140,7 @@ def register_netlist_tools(mcp: FastMCP) -> None:
                 await ctx.report_progress(20, 100)
                 ctx.info("Parsing schematic structure...")
 
-            netlist_data = extract_netlist(schematic_path)
+            netlist_data = extract_netlist(schematic_path, timeout=60.0)
 
             if "error" in netlist_data:
                 print(f"Error extracting netlist: {netlist_data['error']}")
@@ -216,7 +216,7 @@ def register_netlist_tools(mcp: FastMCP) -> None:
         
         # Extract netlist information
         try:
-            netlist_data = extract_netlist(schematic_path)
+            netlist_data = extract_netlist(schematic_path, timeout=60.0)
             
             if "error" in netlist_data:
                 print(f"Error extracting netlist: {netlist_data['error']}")
@@ -355,7 +355,7 @@ def register_netlist_tools(mcp: FastMCP) -> None:
                 await ctx.report_progress(30, 100)
                 ctx.info(f"Extracting netlist to find connections for {component_ref}...")
             
-            netlist_data = extract_netlist(schematic_path)
+            netlist_data = extract_netlist(schematic_path, timeout=60.0)
             
             if "error" in netlist_data:
                 print(f"Failed to extract netlist: {netlist_data['error']}")

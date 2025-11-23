@@ -12,6 +12,7 @@ from pathlib import Path
 
 from kicad_mcp.utils.netlist_parser import SchematicParser
 from kicad_mcp.utils.pcb_netlist_parser import PCBNetlistParser
+from kicad_mcp.utils.netlist_xml_extractor import export_and_parse_netlist_xml
 from ..interfaces import SchematicProvider
 from ..models import Component, Pin, Net
 
@@ -41,16 +42,18 @@ class KiCADSchematicAdapter(SchematicProvider):
         self.project_root = Path(project_root)
         self._parsed_sheets: Dict[str, Dict[str, Any]] = {}  # sheet_name -> parsed_data
         self._pcb_netlist: Dict[str, Dict[str, str]] = {}  # refdes -> {pad: net}
+        self._xml_netlist: Dict[str, Any] = {}  # XML netlist data with pin connectivity
         self._ready = False
 
     def fetch_raw_data(self) -> None:
         """
-        Parse all .kicad_sch files and .kicad_pcb file.
+        Parse all .kicad_sch files and extract pin connectivity.
 
         This method:
         1. Parses .kicad_sch files for component metadata (using SchematicParser)
-        2. Parses .kicad_pcb file for pin-to-net connectivity (using PCBNetlistParser)
-        3. Merges the data to build complete component information
+        2. Exports XML netlist using kicad-cli for pin-to-net connectivity (preferred)
+        3. Falls back to PCB file parsing if XML netlist export fails
+        4. Merges the data to build complete component information
 
         Raises:
             FileNotFoundError: If no .kicad_sch files found in project_root
@@ -66,6 +69,7 @@ class KiCADSchematicAdapter(SchematicProvider):
 
         # Parse each schematic file for component metadata
         successful_parses = 0
+        root_schematic = None
         for sch_file in schematic_files:
             sheet_name = sch_file.stem
 
@@ -74,6 +78,10 @@ class KiCADSchematicAdapter(SchematicProvider):
                 parsed_data = parser.parse()
                 self._parsed_sheets[sheet_name] = parsed_data
                 successful_parses += 1
+
+                # Track the first schematic as root for netlist export
+                if root_schematic is None:
+                    root_schematic = sch_file
 
             except Exception as e:
                 print(f"Warning: Failed to parse {sheet_name}: {e}")
@@ -84,19 +92,42 @@ class KiCADSchematicAdapter(SchematicProvider):
                 f"Failed to parse any .kicad_sch files in {self.project_root}"
             )
 
-        # Parse PCB file for netlist connectivity
-        pcb_files = list(self.project_root.glob("*.kicad_pcb"))
-        if pcb_files:
+        # Try XML netlist export first (preferred method)
+        xml_netlist_success = False
+        if root_schematic:
             try:
-                print(f"Parsing PCB netlist from {pcb_files[0].name}...")
-                pcb_parser = PCBNetlistParser(str(pcb_files[0]))
-                self._pcb_netlist = pcb_parser.parse()
-                print(f"Extracted connectivity for {len(self._pcb_netlist)} components")
+                print(f"Exporting XML netlist from {root_schematic.name}...")
+                self._xml_netlist = export_and_parse_netlist_xml(str(root_schematic))
+                xml_component_count = self._xml_netlist.get('component_count', 0)
+                print(f"Extracted {xml_component_count} components with pin connectivity from XML netlist")
+                xml_netlist_success = True
+
+                # Convert XML netlist format to PCB netlist format for compatibility
+                for comp_ref, comp_data in self._xml_netlist.get('components', {}).items():
+                    pins_dict = {}
+                    for pin_num, pin_info in comp_data.get('pins', {}).items():
+                        pins_dict[pin_num] = pin_info.get('net', '')
+                    if pins_dict:
+                        self._pcb_netlist[comp_ref] = pins_dict
+
             except Exception as e:
-                print(f"Warning: Failed to parse PCB netlist: {e}")
-                print("Continuing without pin connectivity data...")
-        else:
-            print("Warning: No .kicad_pcb file found - pin connectivity unavailable")
+                print(f"Warning: Failed to export XML netlist: {e}")
+                print("Falling back to PCB file netlist parsing...")
+
+        # Fallback to PCB file for netlist connectivity (if XML failed)
+        if not xml_netlist_success:
+            pcb_files = list(self.project_root.glob("*.kicad_pcb"))
+            if pcb_files:
+                try:
+                    print(f"Parsing PCB netlist from {pcb_files[0].name}...")
+                    pcb_parser = PCBNetlistParser(str(pcb_files[0]))
+                    self._pcb_netlist = pcb_parser.parse()
+                    print(f"Extracted connectivity for {len(self._pcb_netlist)} components")
+                except Exception as e:
+                    print(f"Warning: Failed to parse PCB netlist: {e}")
+                    print("Continuing without pin connectivity data...")
+            else:
+                print("Warning: No .kicad_pcb file found - pin connectivity unavailable")
 
         self._ready = True
 
